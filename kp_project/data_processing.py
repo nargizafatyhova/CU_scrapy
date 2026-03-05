@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import base64
 
 import pymongo
+from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
 import requests
 from itemadapter import ItemAdapter
 
@@ -42,13 +45,28 @@ class MongoPipeline:
         )
 
     def open_spider(self, spider):
-        self.client = pymongo.MongoClient(self.uri)
+        try:
+            self.client = pymongo.MongoClient(self.uri, serverSelectionTimeoutMS=2000)
+            # Trigger a connection attempt so we can fail fast if Mongo is unavailable.
+            self.client.server_info()
+        except ServerSelectionTimeoutError as exc:
+            spider.logger.warning(
+                "MongoPipeline disabled: cannot connect to %s (%s)", self.uri, exc
+            )
+            self.client = None
 
     def close_spider(self, spider):
         if self.client:
             self.client.close()
 
     def process_item(self, item, spider):
-        db = self.client[self.database]
-        db[COLLECTION_NAME].insert_one(ItemAdapter(item).asdict())
+        if not self.client:
+            return item
+
+        try:
+            db = self.client[self.database]
+            db[COLLECTION_NAME].insert_one(ItemAdapter(item).asdict())
+        except PyMongoError as exc:
+            spider.logger.warning("Failed to save item to Mongo: %s", exc)
+
         return item

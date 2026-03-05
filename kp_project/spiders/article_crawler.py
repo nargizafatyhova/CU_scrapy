@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import random
 
 import scrapy
@@ -55,6 +57,8 @@ class ArticleCrawler(scrapy.Spider):
 
         for href in links:
             url = response.urljoin(href)
+            if not url.startswith(("http://", "https://")):
+                continue
             if "kp.ru" not in url:
                 continue
 
